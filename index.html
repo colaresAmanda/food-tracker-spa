@@ -22,7 +22,6 @@
       .scroll-container { height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      input[type="datetime-local"] { appearance: none; -webkit-appearance: none; }
     </style>
     <script type="importmap">
 {
@@ -38,6 +37,7 @@
 </head>
 <body>
     <div id="root"></div>
+    <!-- Always use .js for GitHub Pages to avoid MIME type errors -->
     <script type="module" src="index.js"></script>
 </body>
 </html>
