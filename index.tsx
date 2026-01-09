@@ -35,6 +35,13 @@ const DB = {
     const transaction = db.transaction(storeName, 'readwrite');
     transaction.objectStore(storeName).put(item);
   },
+  saveMany: async (storeName: string, items: any[]): Promise<void> => {
+    const db = await DB.open();
+    const transaction = db.transaction(storeName, 'readwrite');
+    const store = transaction.objectStore(storeName);
+    items.forEach(item => store.put(item));
+    return new Promise((resolve) => transaction.oncomplete = () => resolve());
+  },
   delete: async (storeName: string, id: string): Promise<void> => {
     const db = await DB.open();
     const transaction = db.transaction(storeName, 'readwrite');
@@ -189,7 +196,7 @@ const LibraryView = ({ library, onAdd, onDelete, onUpdate }: any) => {
                 <div className="flex-1 flex gap-2 animate-fadeIn">
                   <input 
                     autoFocus
-                    className="flex-1 px-3 py-2 bg-gray-100 border border-emerald-300 rounded-lg outline-none font-bold text-gray-800 focus:ring-2 focus:ring-emerald-400"
+                    className="flex-1 px-3 py-2 bg-white border border-emerald-400 rounded-lg outline-none font-bold text-gray-900 focus:ring-4 focus:ring-emerald-100"
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && saveEdit(item.id)}
@@ -291,7 +298,6 @@ const HistoryView = ({ history, library, onDelete, onUpdate }: any) => {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [editingMeal, setEditingMeal] = useState<any | null>(null);
 
-  // Map library for fast lookup
   const libMap = useMemo(() => {
     const map = new Map();
     library.forEach((item: any) => map.set(item.id, item.name));
@@ -314,18 +320,8 @@ const HistoryView = ({ history, library, onDelete, onUpdate }: any) => {
           <div className="flex justify-between items-start mb-2">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{formatDate(entry.timestamp)}</span>
             <div className="flex gap-1">
-              <button 
-                onClick={() => setEditingMeal(entry)}
-                className="text-gray-200 hover:text-emerald-500 p-1 transition-colors"
-              >
-                <i className="fa-solid fa-pencil text-xs"></i>
-              </button>
-              <button 
-                onClick={() => setConfirmId(entry.id)} 
-                className="text-gray-200 hover:text-red-500 p-1 transition-colors"
-              >
-                <i className="fa-solid fa-trash-can text-xs"></i>
-              </button>
+              <button onClick={() => setEditingMeal(entry)} className="text-gray-200 hover:text-emerald-500 p-1 transition-colors"><i className="fa-solid fa-pencil text-xs"></i></button>
+              <button onClick={() => setConfirmId(entry.id)} className="text-gray-200 hover:text-red-500 p-1 transition-colors"><i className="fa-solid fa-trash-can text-xs"></i></button>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -368,7 +364,6 @@ const App = () => {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Load from IndexedDB
   useEffect(() => {
     const load = async () => {
       try {
@@ -384,6 +379,46 @@ const App = () => {
     };
     load();
   }, []);
+
+  const exportData = async () => {
+    const lib = await DB.getAll('library');
+    const hist = await DB.getAll('history');
+    const data = JSON.stringify({ library: lib, history: hist }, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `foodflow_backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importData = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e: any) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (re: any) => {
+        try {
+          const data = JSON.parse(re.target.result);
+          if (data.library && data.history) {
+            await DB.saveMany('library', data.library);
+            await DB.saveMany('history', data.history);
+            window.location.reload();
+          } else {
+            alert("Invalid backup file format.");
+          }
+        } catch (err) {
+          alert("Error parsing file.");
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
 
   const addFood = async (name: string) => {
     const newItem = { id: generateId(), name };
@@ -406,10 +441,8 @@ const App = () => {
   };
 
   const logMeal = async (itemIds: string[], timestamp: number) => {
-    // Create a name snapshot for safety if item is deleted from library later
     const snapshots: any = {};
     library.filter(l => itemIds.includes(l.id)).forEach(l => snapshots[l.id] = l.name);
-
     const newEntry = { id: generateId(), timestamp, itemIds, itemSnapshots: snapshots };
     const next = [newEntry, ...history].sort((a,b) => b.timestamp - a.timestamp);
     setHistory(next);
@@ -421,7 +454,6 @@ const App = () => {
     const current = history.find(h => h.id === id);
     const snapshots = { ...current?.itemSnapshots };
     library.filter(l => itemIds.includes(l.id)).forEach(l => snapshots[l.id] = l.name);
-
     const updated = { ...current, itemIds, timestamp, itemSnapshots: snapshots };
     const next = history.map(h => h.id === id ? updated : h).sort((a,b) => b.timestamp - a.timestamp);
     setHistory(next);
@@ -450,7 +482,13 @@ const App = () => {
       <header className="px-6 py-4 bg-white border-b border-gray-100 flex justify-between items-center shrink-0 z-40 shadow-sm">
         <div>
           <h1 className="text-2xl font-black text-emerald-600 tracking-tight leading-none">FoodFlow</h1>
-          <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-1">Smart Sync Enabled</p>
+          <div className="flex gap-4 mt-1">
+             <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Smart Sync</p>
+             <div className="flex gap-2">
+                <button onClick={exportData} title="Export Data" className="text-[9px] font-black text-emerald-400 hover:text-emerald-600 transition-colors uppercase tracking-widest flex items-center gap-1"><i className="fa-solid fa-download"></i> Export</button>
+                <button onClick={importData} title="Import Data" className="text-[9px] font-black text-blue-400 hover:text-blue-600 transition-colors uppercase tracking-widest flex items-center gap-1"><i className="fa-solid fa-upload"></i> Import</button>
+             </div>
+          </div>
         </div>
         <div className="hidden md:flex gap-2">
           {[ViewMode.LOG, ViewMode.HISTORY, ViewMode.LIBRARY].map(v => (
