@@ -1,0 +1,52 @@
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+.animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+.animate-slideUp { animation: slideUp 0.3s ease-out; }
+
+html, body, #app { 
+  height: 100%; 
+  margin: 0; 
+  padding: 0; 
+  overflow: hidden; 
+  position: fixed; 
+  width: 100%; 
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.scroll-container {
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Hide scrollbars */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Navigation States */
+.nav-btn.active {
+  background-color: #10b981; /* emerald-500 */
+  color: white;
+}
+.nav-btn:not(.active) {
+  color: #9ca3af; /* gray-400 */
+}
+
+.nav-btn-mobile.active {
+  color: #10b981;
+  transform: scale(1.05);
+}
+.nav-btn-mobile:not(.active) {
+  color: #9ca3af;
+}
+
+/* Food Button Active State */
+.food-card.selected {
+  background-color: #10b981;
+  border-color: #10b981;
+  color: white;
+  transform: scale(0.95);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
