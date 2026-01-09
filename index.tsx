@@ -1,10 +1,46 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 
 /** --- Constants & Types --- */
 const ViewMode = { LOG: 'LOG', HISTORY: 'HISTORY', LIBRARY: 'LIBRARY' };
-const STORAGE_KEYS = { LIBRARY: 'foodflow_lib_v3', HISTORY: 'foodflow_hist_v3' };
+const DB_NAME = 'FoodFlowDB';
+const DB_VERSION = 1;
+
+/** --- IndexedDB Wrapper --- */
+const DB = {
+  open: (): Promise<IDBDatabase> => {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (e: any) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('library')) db.createObjectStore('library', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('history')) db.createObjectStore('history', { keyPath: 'id' });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+  getAll: async (storeName: string): Promise<any[]> => {
+    const db = await DB.open();
+    return new Promise((resolve) => {
+      const transaction = db.transaction(storeName, 'readonly');
+      const store = transaction.objectStore(storeName);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result);
+    });
+  },
+  save: async (storeName: string, item: any): Promise<void> => {
+    const db = await DB.open();
+    const transaction = db.transaction(storeName, 'readwrite');
+    transaction.objectStore(storeName).put(item);
+  },
+  delete: async (storeName: string, id: string): Promise<void> => {
+    const db = await DB.open();
+    const transaction = db.transaction(storeName, 'readwrite');
+    transaction.objectStore(storeName).delete(id);
+  }
+};
 
 const generateId = () => 'id-' + Date.now() + '-' + Math.random().toString(36).substring(2, 11);
 
@@ -18,15 +54,6 @@ const getIsoLocal = (date: Date) => {
   const offset = date.getTimezoneOffset();
   const adjustedDate = new Date(date.getTime() - (offset * 60 * 1000));
   return adjustedDate.toISOString().slice(0, 16);
-};
-
-/** --- Storage Service --- */
-const Storage = {
-  get: (key: string, def: any) => {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : def;
-  },
-  set: (key: string, val: any) => localStorage.setItem(key, JSON.stringify(val))
 };
 
 /** --- Sub-Components --- */
@@ -50,7 +77,7 @@ const Navigation = ({ active, onChange }: { active: string, onChange: (v: string
   </nav>
 );
 
-const LogView = ({ library, onLog }: { library: any[], onLog: (names: string[], ts: number) => void }) => {
+const LogView = ({ library, onLog }: { library: any[], onLog: (ids: string[], ts: number) => void }) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [logTime, setLogTime] = useState(getIsoLocal(new Date()));
 
@@ -61,9 +88,8 @@ const LogView = ({ library, onLog }: { library: any[], onLog: (names: string[], 
   };
 
   const handleSave = () => {
-    const names = library.filter(i => selected.has(i.id)).map(i => i.name);
-    if (names.length > 0) {
-      onLog(names, new Date(logTime).getTime());
+    if (selected.size > 0) {
+      onLog(Array.from(selected), new Date(logTime).getTime());
       setSelected(new Set());
     }
   };
@@ -163,7 +189,7 @@ const LibraryView = ({ library, onAdd, onDelete, onUpdate }: any) => {
                 <div className="flex-1 flex gap-2 animate-fadeIn">
                   <input 
                     autoFocus
-                    className="flex-1 px-3 py-2 bg-gray-50 border border-emerald-200 rounded-lg outline-none font-semibold text-gray-700 focus:ring-2 focus:ring-emerald-400"
+                    className="flex-1 px-3 py-2 bg-gray-100 border border-emerald-300 rounded-lg outline-none font-bold text-gray-800 focus:ring-2 focus:ring-emerald-400"
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && saveEdit(item.id)}
@@ -190,18 +216,18 @@ const LibraryView = ({ library, onAdd, onDelete, onUpdate }: any) => {
 
 /** --- History Edit Modal --- */
 const HistoryEditModal = ({ entry, library, onSave, onCancel }: any) => {
-  const [selectedNames, setSelectedNames] = useState<Set<string>>(new Set(entry.itemNames));
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(entry.itemIds));
   const [editTime, setEditTime] = useState(getIsoLocal(new Date(entry.timestamp)));
 
-  const toggle = (name: string) => {
-    const next = new Set(selectedNames);
-    if (next.has(name)) next.delete(name); else next.add(name);
-    setSelectedNames(next);
+  const toggle = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelectedIds(next);
   };
 
   const handleSave = () => {
-    if (selectedNames.size > 0) {
-      onSave(entry.id, Array.from(selectedNames), new Date(editTime).getTime());
+    if (selectedIds.size > 0) {
+      onSave(entry.id, Array.from(selectedIds), new Date(editTime).getTime());
     }
   };
 
@@ -230,11 +256,11 @@ const HistoryEditModal = ({ entry, library, onSave, onCancel }: any) => {
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-3">Modify Items</label>
             <div className="grid grid-cols-2 gap-2">
               {library.map((item: any) => {
-                const isSelected = selectedNames.has(item.name);
+                const isSelected = selectedIds.has(item.id);
                 return (
                   <button
                     key={item.id}
-                    onClick={() => toggle(item.name)}
+                    onClick={() => toggle(item.id)}
                     className={`h-20 p-3 rounded-xl border-2 transition-all flex items-center justify-center text-center relative ${
                       isSelected ? 'bg-emerald-500 border-emerald-500 text-white shadow-md' : 'bg-white border-gray-100 text-gray-600'
                     }`}
@@ -250,7 +276,7 @@ const HistoryEditModal = ({ entry, library, onSave, onCancel }: any) => {
         <div className="p-6 bg-white border-t border-gray-100">
           <button
             onClick={handleSave}
-            disabled={selectedNames.size === 0}
+            disabled={selectedIds.size === 0}
             className="w-full bg-emerald-600 disabled:bg-gray-200 text-white py-4 rounded-2xl font-bold shadow-xl active:scale-95 transition-all"
           >
             Update Meal
@@ -264,6 +290,13 @@ const HistoryEditModal = ({ entry, library, onSave, onCancel }: any) => {
 const HistoryView = ({ history, library, onDelete, onUpdate }: any) => {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [editingMeal, setEditingMeal] = useState<any | null>(null);
+
+  // Map library for fast lookup
+  const libMap = useMemo(() => {
+    const map = new Map();
+    library.forEach((item: any) => map.set(item.id, item.name));
+    return map;
+  }, [library]);
 
   if (history.length === 0) {
     return (
@@ -296,9 +329,12 @@ const HistoryView = ({ history, library, onDelete, onUpdate }: any) => {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {entry.itemNames.map((name: string, i: number) => (
-              <span key={i} className="bg-gray-50 text-gray-600 px-3 py-1 rounded-xl text-xs font-semibold border border-gray-100">{name}</span>
-            ))}
+            {entry.itemIds.map((id: string, i: number) => {
+              const name = libMap.get(id) || entry.itemSnapshots?.[id] || "Deleted Item";
+              return (
+                <span key={i} className="bg-gray-50 text-gray-600 px-3 py-1 rounded-xl text-xs font-semibold border border-gray-100">{name}</span>
+              );
+            })}
           </div>
           {confirmId === entry.id && (
             <div className="absolute inset-0 bg-white/95 backdrop-blur-sm flex items-center justify-center gap-3 animate-fadeIn z-10">
@@ -314,8 +350,8 @@ const HistoryView = ({ history, library, onDelete, onUpdate }: any) => {
           entry={editingMeal} 
           library={library} 
           onCancel={() => setEditingMeal(null)}
-          onSave={(id: string, items: string[], ts: number) => {
-            onUpdate(id, items, ts);
+          onSave={(id: string, itemIds: string[], ts: number) => {
+            onUpdate(id, itemIds, ts);
             setEditingMeal(null);
           }}
         />
@@ -330,49 +366,91 @@ const App = () => {
   const [view, setView] = useState(ViewMode.LOG);
   const [library, setLibrary] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  // Load from IndexedDB
   useEffect(() => {
-    setLibrary(Storage.get(STORAGE_KEYS.LIBRARY, []).sort((a:any,b:any) => a.name.localeCompare(b.name)));
-    setHistory(Storage.get(STORAGE_KEYS.HISTORY, []).sort((a:any,b:any) => b.timestamp - a.timestamp));
+    const load = async () => {
+      try {
+        const lib = await DB.getAll('library');
+        const hist = await DB.getAll('history');
+        setLibrary(lib.sort((a,b) => a.name.localeCompare(b.name)));
+        setHistory(hist.sort((a,b) => b.timestamp - a.timestamp));
+      } catch (err) {
+        console.error("DB Error", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
   }, []);
 
-  const addFood = (name: string) => {
-    const next = [...library, { id: generateId(), name }].sort((a,b) => a.name.localeCompare(b.name));
-    setLibrary(next); Storage.set(STORAGE_KEYS.LIBRARY, next);
+  const addFood = async (name: string) => {
+    const newItem = { id: generateId(), name };
+    const next = [...library, newItem].sort((a,b) => a.name.localeCompare(b.name));
+    setLibrary(next);
+    await DB.save('library', newItem);
   };
 
-  const updateFood = (id: string, newName: string) => {
-    const next = library.map(i => i.id === id ? { ...i, name: newName } : i).sort((a,b) => a.name.localeCompare(b.name));
-    setLibrary(next); Storage.set(STORAGE_KEYS.LIBRARY, next);
+  const updateFood = async (id: string, newName: string) => {
+    const updated = { id, name: newName };
+    const next = library.map(i => i.id === id ? updated : i).sort((a,b) => a.name.localeCompare(b.name));
+    setLibrary(next);
+    await DB.save('library', updated);
   };
 
-  const deleteFood = (id: string) => {
+  const deleteFood = async (id: string) => {
     const next = library.filter(i => i.id !== id);
-    setLibrary(next); Storage.set(STORAGE_KEYS.LIBRARY, next);
+    setLibrary(next);
+    await DB.delete('library', id);
   };
 
-  const logMeal = (itemNames: string[], timestamp: number) => {
-    const next = [{ id: generateId(), timestamp, itemNames }, ...history].sort((a,b) => b.timestamp - a.timestamp);
-    setHistory(next); Storage.set(STORAGE_KEYS.HISTORY, next);
+  const logMeal = async (itemIds: string[], timestamp: number) => {
+    // Create a name snapshot for safety if item is deleted from library later
+    const snapshots: any = {};
+    library.filter(l => itemIds.includes(l.id)).forEach(l => snapshots[l.id] = l.name);
+
+    const newEntry = { id: generateId(), timestamp, itemIds, itemSnapshots: snapshots };
+    const next = [newEntry, ...history].sort((a,b) => b.timestamp - a.timestamp);
+    setHistory(next);
+    await DB.save('history', newEntry);
     setView(ViewMode.HISTORY);
   };
 
-  const updateMeal = (id: string, itemNames: string[], timestamp: number) => {
-    const next = history.map(h => h.id === id ? { ...h, itemNames, timestamp } : h).sort((a,b) => b.timestamp - a.timestamp);
-    setHistory(next); Storage.set(STORAGE_KEYS.HISTORY, next);
+  const updateMeal = async (id: string, itemIds: string[], timestamp: number) => {
+    const current = history.find(h => h.id === id);
+    const snapshots = { ...current?.itemSnapshots };
+    library.filter(l => itemIds.includes(l.id)).forEach(l => snapshots[l.id] = l.name);
+
+    const updated = { ...current, itemIds, timestamp, itemSnapshots: snapshots };
+    const next = history.map(h => h.id === id ? updated : h).sort((a,b) => b.timestamp - a.timestamp);
+    setHistory(next);
+    await DB.save('history', updated);
   };
 
-  const deleteMeal = (id: string) => {
+  const deleteMeal = async (id: string) => {
     const next = history.filter(h => h.id !== id);
-    setHistory(next); Storage.set(STORAGE_KEYS.HISTORY, next);
+    setHistory(next);
+    await DB.delete('history', id);
   };
+
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-50">
+        <div className="text-emerald-500 flex flex-col items-center">
+          <i className="fa-solid fa-circle-notch fa-spin text-3xl mb-3"></i>
+          <span className="text-[10px] font-black uppercase tracking-widest">Loading Records</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <header className="px-6 py-4 bg-white border-b border-gray-100 flex justify-between items-center shrink-0 z-40 shadow-sm">
         <div>
           <h1 className="text-2xl font-black text-emerald-600 tracking-tight leading-none">FoodFlow</h1>
-          <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-1">Focus on Fuel</p>
+          <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-1">Smart Sync Enabled</p>
         </div>
         <div className="hidden md:flex gap-2">
           {[ViewMode.LOG, ViewMode.HISTORY, ViewMode.LIBRARY].map(v => (
