@@ -225,13 +225,97 @@ const StatsView = ({ history, library }) => {
     return days;
   }, [history]);
 
+  // Additional metrics for the Stats view
+  const metrics = useMemo(() => {
+    const totalsPerDay = stats.map(s => s.morning + s.afternoon + s.evening + s.night);
+    const totalMeals = totalsPerDay.reduce((a,b) => a + b, 0);
+    const avgPerDay = (totalMeals / stats.length) || 0;
+
+    // Count top foods in the same 7-day window
+    const startWindow = stats[0]?.date || 0;
+    const foodCounts = new Map();
+    history.filter(h => h.timestamp >= startWindow).forEach(h => {
+      h.itemIds.forEach(id => {
+        const name = h.itemSnapshots?.[id] || (library.find(l => l.id === id)?.name) || id;
+        foodCounts.set(name, (foodCounts.get(name) || 0) + 1);
+      });
+    });
+
+    const topFoods = Array.from(foodCounts.entries()).map(([name, count]) => ({ name, count })).sort((a,b) => b.count - a.count).slice(0,5);
+
+    const uniqueFoods = new Set();
+    history.forEach(h => h.itemIds.forEach(id => uniqueFoods.add(id)));
+
+    return { totalsPerDay, totalMeals, avgPerDay, topFoods, uniqueCount: uniqueFoods.size };
+  }, [stats, history, library]);
+
+  const MiniBarChart = ({ values, labels }) => {
+    const max = Math.max(...values, 1);
+    return html`
+      <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+        <svg viewBox="0 0 100 40" className="w-full h-12">
+          ${values.map((v,i) => {
+            const x = (i / values.length) * 100 + 2;
+            const w = 100 / values.length - 4;
+            const h = (v / max) * 30;
+            const y = 36 - h;
+            return html`<rect key=${i} x=${x} y=${y} width=${w} height=${h} rx="1" fill="#10b981" />`;
+          })}
+        </svg>
+        <div className="flex justify-between text-[10px] text-gray-400 mt-2">
+          ${labels.map(l => html`<span key=${l} className="font-black">${l}</span>`)}
+        </div>
+      </div>
+    `;
+  };
+
+  const TopFoods = ({ items }) => html`
+    <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+      <h4 className="text-sm font-black text-gray-500 mb-3">Top Foods (7d)</h4>
+      ${items.length === 0 ? html`<p className="text-gray-400 text-sm">No data</p>` : items.map(it => html`
+        <div key=${it.name} className="flex items-center gap-3 py-2">
+          <div className="flex-1">
+            <div className="flex justify-between text-sm"><span className="font-bold text-gray-700">${it.name}</span><span className="text-gray-400 text-xs">${it.count}</span></div>
+            <div className="w-full bg-gray-100 h-2 rounded-full mt-2"><div className="h-2 rounded-full bg-emerald-400" style=${{ width: `${(it.count / (items[0]?.count || 1)) * 100}%` }} /></div>
+          </div>
+        </div>
+      `)}
+    </div>
+  `;
+
   return html`
     <div className="space-y-8 pb-24 animate-fadeIn">
-      <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Meal Timing (7 Days)</h3>
-        <${StackedAreaChart} data=${stats} />
-        <div className="flex justify-between mt-4 px-4">
-          ${stats.map(s => html`<span key=${s.date} className="text-[9px] font-black text-gray-400 uppercase">${s.label}</span>`)}
+      <div className="grid lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Meal Timing (7 Days)</h3>
+            <${StackedAreaChart} data=${stats} />
+            <div className="flex justify-between mt-4 px-4">
+              ${stats.map(s => html`<span key=${s.date} className="text-[9px] font-black text-gray-400 uppercase">${s.label}</span>`)}
+            </div>
+          </div>
+          <${MiniBarChart} values=${metrics.totalsPerDay} labels=${stats.map(s => s.label)} />
+        </div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+              <div className="text-xs text-gray-400">Total Meals</div>
+              <div className="text-2xl font-black text-gray-800">${metrics.totalMeals}</div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+              <div className="text-xs text-gray-400">Avg / Day</div>
+              <div className="text-2xl font-black text-gray-800">${metrics.avgPerDay.toFixed(2)}</div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+              <div className="text-xs text-gray-400">Unique Foods</div>
+              <div className="text-2xl font-black text-gray-800">${metrics.uniqueCount}</div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+              <div className="text-xs text-gray-400">Top Food</div>
+              <div className="text-2xl font-black text-gray-800">${metrics.topFoods[0]?.name || '—'}</div>
+            </div>
+          </div>
+          <${TopFoods} items=${metrics.topFoods} />
         </div>
       </div>
     </div>
