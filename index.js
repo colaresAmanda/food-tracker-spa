@@ -130,19 +130,75 @@ const LogView = ({ library, onLog }) => {
   `;
 };
 
-const HistoryView = ({ history, library, onDelete }) => {
+const HistoryView = ({ history, library, onDelete, onUpdate }) => {
   const libMap = useMemo(() => new Map(library.map(l => [l.id, l.name])), [library]);
+  const [editingId, setEditingId] = useState(null);
+  const [editTime, setEditTime] = useState('');
+  const [editItems, setEditItems] = useState(new Set());
+
+  const startEdit = (entry) => {
+    setEditingId(entry.id);
+    setEditTime(getIsoLocal(new Date(entry.timestamp)));
+    setEditItems(new Set(entry.itemIds));
+  };
+
+  const toggleEditItem = (id) => {
+    const newItems = new Set(editItems);
+    if (newItems.has(id)) newItems.delete(id);
+    else newItems.add(id);
+    setEditItems(newItems);
+  };
+
+  const saveEdit = () => {
+    if (editItems.size > 0) {
+      const snaps = {};
+      library.filter(l => editItems.has(l.id)).forEach(l => snaps[l.id] = l.name);
+      onUpdate(editingId, Array.from(editItems), new Date(editTime).getTime(), snaps);
+    }
+    setEditingId(null);
+    setEditTime('');
+    setEditItems(new Set());
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditTime('');
+    setEditItems(new Set());
+  };
+
   return html`
     <div className="space-y-4 pb-24 animate-fadeIn">
       ${history.length === 0 ? html`<p className="text-center py-20 text-gray-400">No logs found.</p>` : history.map(h => html`
-        <div key=${h.id} className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm flex justify-between items-start">
-          <div>
-            <p className="text-[10px] font-black text-emerald-600 uppercase mb-2">${formatDate(h.timestamp)}</p>
-            <div className="flex flex-wrap gap-1">
-              ${h.itemIds.map(id => html`<span key=${id} className="bg-gray-50 px-2 py-1 rounded-lg text-xs font-bold text-gray-600 border border-gray-100">${libMap.get(id) || h.itemSnapshots?.[id] || '??'}</span>`)}
+        <div key=${h.id} className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+          ${editingId === h.id ? html`
+            <div className="space-y-4">
+              <input type="datetime-local" value=${editTime} onChange=${e => setEditTime(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-800" />
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                ${library.map(i => html`
+                  <button key=${i.id} onClick=${() => toggleEditItem(i.id)} className=${`h-16 p-2 rounded-xl border-2 transition-all flex items-center justify-center text-center font-bold text-xs ${editItems.has(i.id) ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-gray-200 text-gray-700'}`}>
+                    ${i.name}
+                  </button>
+                `)}
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick=${saveEdit} className="bg-green-500 text-white px-4 py-2 rounded-lg font-bold text-sm"><i className="fa-solid fa-check mr-1"></i>Save</button>
+                <button onClick=${cancelEdit} className="bg-gray-400 text-white px-4 py-2 rounded-lg font-bold text-sm"><i className="fa-solid fa-x mr-1"></i>Cancel</button>
+              </div>
             </div>
-          </div>
-          <button onClick=${() => onDelete(h.id)} className="text-gray-300 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can text-sm"></i></button>
+          ` : html`
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="text-[10px] font-black text-emerald-600 uppercase mb-2">${formatDate(h.timestamp)}</p>
+                <div className="flex flex-wrap gap-1">
+                  ${h.itemIds.map(id => html`<span key=${id} className="bg-gray-50 px-2 py-1 rounded-lg text-xs font-bold text-gray-600 border border-gray-100">${libMap.get(id) || h.itemSnapshots?.[id] || '??'}</span>`)}
+                </div>
+              </div>
+              <div className="flex gap-1">
+                <button onClick=${() => startEdit(h)} className="text-gray-400 hover:text-blue-500 p-2"><i className="fa-solid fa-pen text-sm"></i></button>
+                <button onClick=${() => onDelete(h.id)} className="text-gray-300 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can text-sm"></i></button>
+              </div>
+            </div>
+          `}
         </div>
       `)}
     </div>
@@ -182,7 +238,7 @@ const StatsView = ({ history, library }) => {
   `;
 };
 
-const LibraryView = ({ library, onAdd, onDelete }) => {
+const LibraryView = ({ library, onAdd, onDelete, onUpdate }) => {
   const [val, setVal] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editVal, setEditVal] = useState('');
@@ -192,13 +248,9 @@ const LibraryView = ({ library, onAdd, onDelete }) => {
     setEditVal(item.name);
   };
 
-  const saveEdit = async () => {
+  const saveEdit = () => {
     if (editVal.trim() && editVal !== library.find(l => l.id === editingId)?.name) {
-      const updatedItem = { id: editingId, name: editVal.trim() };
-      // Update in state
-      setLibrary(prev => prev.map(l => l.id === editingId ? updatedItem : l).sort((a,b) => a.name.localeCompare(b.name)));
-      // Update in DB
-      await DB.save('library', updatedItem);
+      onUpdate(editingId, editVal.trim());
     }
     setEditingId(null);
     setEditVal('');
@@ -258,6 +310,12 @@ const App = () => {
     await DB.save('library', item);
   };
 
+  const updateFood = async (id, name) => {
+    const updatedItem = { id, name };
+    setLibrary(prev => prev.map(l => l.id === id ? updatedItem : l).sort((a,b) => a.name.localeCompare(b.name)));
+    await DB.save('library', updatedItem);
+  };
+
   const deleteFood = async (id) => {
     setLibrary(prev => prev.filter(i => i.id !== id));
     await DB.delete('library', id);
@@ -270,6 +328,12 @@ const App = () => {
     setHistory(prev => [entry, ...prev].sort((a,b) => b.timestamp - a.timestamp));
     await DB.save('history', entry);
     setView(ViewMode.HISTORY);
+  };
+
+  const updateMeal = async (id, itemIds, timestamp, itemSnapshots) => {
+    const updatedEntry = { id, timestamp, itemIds, itemSnapshots };
+    setHistory(prev => prev.map(h => h.id === id ? updatedEntry : h).sort((a,b) => b.timestamp - a.timestamp));
+    await DB.save('history', updatedEntry);
   };
 
   const deleteMeal = async (id) => {
@@ -290,9 +354,9 @@ const App = () => {
       <main className="flex-1 overflow-hidden scroll-container px-6 py-6 no-scrollbar">
         <div className="max-w-2xl mx-auto w-full">
           ${view === ViewMode.LOG && html`<${LogView} library=${library} onLog=${logMeal} />`}
-          ${view === ViewMode.HISTORY && html`<${HistoryView} history=${history} library=${library} onDelete=${deleteMeal} />`}
+          ${view === ViewMode.HISTORY && html`<${HistoryView} history=${history} library=${library} onDelete=${deleteMeal} onUpdate=${updateMeal} />`}
           ${view === ViewMode.STATS && html`<${StatsView} history=${history} library=${library} />`}
-          ${view === ViewMode.LIBRARY && html`<${LibraryView} library=${library} onAdd=${addFood} onDelete=${deleteFood} />`}
+          ${view === ViewMode.LIBRARY && html`<${LibraryView} library=${library} onAdd=${addFood} onDelete=${deleteFood} onUpdate=${updateFood} />`}
         </div>
       </main>
       <${Navigation} active=${view} onChange=${setView} />
