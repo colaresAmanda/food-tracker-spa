@@ -1,9 +1,8 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import ReactDOM from 'react-dom/client';
-import htm from 'htm';
-
-const html = htm.bind(React.createElement);
+// Use global React, ReactDOM and htm provided by UMD bundles included in index.html
+const { useState, useEffect, useMemo } = React;
+const ReactDOMClient = ReactDOM; // ReactDOM.createRoot is available on the UMD build
+const html = (window.htm || htm).bind(React.createElement);
 
 /** --- Constants & DB --- */
 const ViewMode = { LOG: 'LOG', HISTORY: 'HISTORY', STATS: 'STATS', LIBRARY: 'LIBRARY' };
@@ -185,6 +184,31 @@ const StatsView = ({ history, library }) => {
 
 const LibraryView = ({ library, onAdd, onDelete }) => {
   const [val, setVal] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editVal, setEditVal] = useState('');
+
+  const startEdit = (item) => {
+    setEditingId(item.id);
+    setEditVal(item.name);
+  };
+
+  const saveEdit = async () => {
+    if (editVal.trim() && editVal !== library.find(l => l.id === editingId)?.name) {
+      const updatedItem = { id: editingId, name: editVal.trim() };
+      // Update in state
+      setLibrary(prev => prev.map(l => l.id === editingId ? updatedItem : l).sort((a,b) => a.name.localeCompare(b.name)));
+      // Update in DB
+      await DB.save('library', updatedItem);
+    }
+    setEditingId(null);
+    setEditVal('');
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditVal('');
+  };
+
   return html`
     <div className="space-y-6 pb-24 animate-fadeIn">
       <div className="flex gap-2">
@@ -194,8 +218,19 @@ const LibraryView = ({ library, onAdd, onDelete }) => {
       <div className="bg-white rounded-[2.5rem] border border-gray-100 overflow-hidden divide-y divide-gray-50 shadow-sm">
         ${library.map(l => html`
           <div key=${l.id} className="p-5 flex justify-between items-center">
-            <span className="font-bold text-gray-700">${l.name}</span>
-            <button onClick=${() => onDelete(l.id)} className="text-gray-300 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can text-sm"></i></button>
+            ${editingId === l.id ? html`
+              <div className="flex-1 flex gap-2">
+                <input value=${editVal} onChange=${e => setEditVal(e.target.value)} className="flex-1 p-2 border border-gray-200 rounded-lg font-bold outline-none focus:ring-2 focus:ring-emerald-400" />
+                <button onClick=${saveEdit} className="text-green-500 hover:text-green-700 p-2"><i className="fa-solid fa-check text-sm"></i></button>
+                <button onClick=${cancelEdit} className="text-gray-400 hover:text-gray-600 p-2"><i className="fa-solid fa-x text-sm"></i></button>
+              </div>
+            ` : html`
+              <span className="font-bold text-gray-700">${l.name}</span>
+              <div className="flex gap-2">
+                <button onClick=${() => startEdit(l)} className="text-gray-400 hover:text-blue-500 p-2"><i className="fa-solid fa-pen text-sm"></i></button>
+                <button onClick=${() => onDelete(l.id)} className="text-gray-300 hover:text-red-500 p-2"><i className="fa-solid fa-trash-can text-sm"></i></button>
+              </div>
+            `}
           </div>
         `)}
       </div>
