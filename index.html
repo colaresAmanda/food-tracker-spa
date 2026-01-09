@@ -15,8 +15,11 @@
     <style>
       @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
       @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      @keyframes growUp { from { transform: scaleY(0); transform-origin: bottom; } to { transform: scaleY(1); transform-origin: bottom; } }
+      
       .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
       .animate-slideUp { animation: slideUp 0.3s ease-out; }
+      .animate-grow { animation: growUp 0.6s cubic-bezier(0.17, 0.67, 0.83, 0.67); }
       
       html, body, #root { 
         height: 100%; 
@@ -35,11 +38,16 @@
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-      /* Custom Date Picker Styling */
       input[type="datetime-local"] {
         appearance: none;
         -webkit-appearance: none;
         min-height: 3rem;
+      }
+
+      .chart-container {
+        position: relative;
+        width: 100%;
+        height: 200px;
       }
     </style>
 

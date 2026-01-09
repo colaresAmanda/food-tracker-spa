@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 
 /** --- Constants & Types --- */
-const ViewMode = { LOG: 'LOG', HISTORY: 'HISTORY', LIBRARY: 'LIBRARY' };
+const ViewMode = { LOG: 'LOG', HISTORY: 'HISTORY', STATS: 'STATS', LIBRARY: 'LIBRARY' };
 const DB_NAME = 'FoodFlowDB';
 const DB_VERSION = 1;
 
@@ -66,19 +66,20 @@ const getIsoLocal = (date: Date) => {
 /** --- Sub-Components --- */
 
 const Navigation = ({ active, onChange }: { active: string, onChange: (v: string) => void }) => (
-  <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around py-2 px-4 shadow-lg z-50 md:hidden">
+  <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around py-2 px-2 shadow-lg z-50 md:hidden">
     {[
       { id: ViewMode.LOG, icon: 'fa-utensils', label: 'Log' },
       { id: ViewMode.HISTORY, icon: 'fa-clock-rotate-left', label: 'History' },
+      { id: ViewMode.STATS, icon: 'fa-chart-simple', label: 'Stats' },
       { id: ViewMode.LIBRARY, icon: 'fa-book', label: 'Library' },
     ].map(tab => (
       <button
         key={tab.id}
         onClick={() => onChange(tab.id)}
-        className={`flex flex-col items-center justify-center w-1/3 py-1 transition-all ${active === tab.id ? 'text-emerald-500 scale-105' : 'text-gray-400'}`}
+        className={`flex flex-col items-center justify-center flex-1 py-1 transition-all ${active === tab.id ? 'text-emerald-500 scale-105' : 'text-gray-400'}`}
       >
         <i className={`fa-solid ${tab.icon} text-lg mb-1`}></i>
-        <span className="text-[10px] font-bold uppercase tracking-wider">{tab.label}</span>
+        <span className="text-[9px] font-bold uppercase tracking-wider">{tab.label}</span>
       </button>
     ))}
   </nav>
@@ -221,7 +222,8 @@ const LibraryView = ({ library, onAdd, onDelete, onUpdate }: any) => {
   );
 };
 
-/** --- History Edit Modal --- */
+/** --- History View Components --- */
+
 const HistoryEditModal = ({ entry, library, onSave, onCancel }: any) => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(entry.itemIds));
   const [editTime, setEditTime] = useState(getIsoLocal(new Date(entry.timestamp)));
@@ -356,6 +358,235 @@ const HistoryView = ({ history, library, onDelete, onUpdate }: any) => {
   );
 };
 
+/** --- Stats Components --- */
+
+const StackedAreaChart = ({ data, colors }: { data: any[], colors: Record<string, string> }) => {
+  const keys = ['night', 'evening', 'afternoon', 'morning'];
+  const width = 1000;
+  const height = 300;
+  const padding = 20;
+
+  const maxVal = Math.max(...data.map(d => 
+    keys.reduce((sum, k) => sum + (d[k] || 0), 0)
+  ), 1);
+
+  const getPoints = (keyIndex: number) => {
+    const subset = keys.slice(0, keyIndex + 1);
+    const topPoints = data.map((d, i) => {
+      const x = (i / (data.length - 1)) * width;
+      const sum = subset.reduce((s, k) => s + (d[k] || 0), 0);
+      const y = height - (sum / maxVal) * (height - padding * 2) - padding;
+      return `${x},${y}`;
+    });
+
+    const bottomPoints = keyIndex === 0 
+      ? [`${width},${height}`, `0,${height}`] 
+      : data.map((d, i) => {
+          const revIdx = data.length - 1 - i;
+          const x = (revIdx / (data.length - 1)) * width;
+          const sum = keys.slice(0, keyIndex).reduce((s, k) => s + (data[revIdx][k] || 0), 0);
+          const y = height - (sum / maxVal) * (height - padding * 2) - padding;
+          return `${x},${y}`;
+        }).reverse();
+
+    return [...topPoints, `${width},${height}`, `0,${height}`].join(' ');
+  };
+
+  return (
+    <div className="relative w-full aspect-[2/1] bg-gray-50/50 rounded-2xl overflow-hidden border border-gray-50 shadow-inner">
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full h-full">
+        {keys.map((key, idx) => (
+          <polygon
+            key={key}
+            points={getPoints(keys.length - 1 - idx)}
+            fill={colors[keys[keys.length - 1 - idx]]}
+            className="transition-all duration-700"
+            style={{ opacity: 0.8 }}
+          />
+        ))}
+        {/* Horizontal Grid Lines */}
+        {[0, 0.25, 0.5, 0.75, 1].map(v => (
+          <line
+            key={v}
+            x1="0" y1={height - (v * (height - padding * 2)) - padding}
+            x2={width} y2={height - (v * (height - padding * 2)) - padding}
+            stroke="white" strokeWidth="1" strokeOpacity="0.3"
+          />
+        ))}
+      </svg>
+      {/* Legend Overlay */}
+      <div className="absolute top-2 left-2 flex flex-wrap gap-2">
+        {keys.slice().reverse().map(k => (
+          <div key={k} className="flex items-center gap-1 bg-white/80 backdrop-blur px-2 py-0.5 rounded-full border border-gray-100 shadow-sm">
+            <div className="w-2 h-2 rounded-full" style={{ background: colors[k] }} />
+            <span className="text-[8px] font-black uppercase text-gray-500">{k}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const StatsView = ({ history, library }: any) => {
+  const stats = useMemo(() => {
+    // Activity over last 7 days + stacked distribution
+    const last7Days = Array.from({ length: 7 }).map((_, i) => {
+      const d = new Date();
+      d.setHours(0,0,0,0);
+      d.setDate(d.getDate() - (6 - i));
+      return { 
+        date: d.getTime(), 
+        label: d.toLocaleDateString('en-US', { weekday: 'short' }), 
+        count: 0,
+        morning: 0,
+        afternoon: 0,
+        evening: 0,
+        night: 0
+      };
+    });
+
+    // Time of day overall distribution
+    const timeDist = { morning: 0, afternoon: 0, evening: 0, night: 0 };
+    
+    // Top foods
+    const foodCounts: Record<string, number> = {};
+    const libMap = new Map();
+    library.forEach((item: any) => libMap.set(item.id, item.name));
+
+    history.forEach((entry: any) => {
+      // Activity & Distribution per day
+      const day = last7Days.find(d => {
+        const entryDate = new Date(entry.timestamp);
+        entryDate.setHours(0,0,0,0);
+        return d.date === entryDate.getTime();
+      });
+
+      const hour = new Date(entry.timestamp).getHours();
+      let period: 'morning' | 'afternoon' | 'evening' | 'night' = 'night';
+      if (hour >= 5 && hour < 11) period = 'morning';
+      else if (hour >= 11 && hour < 17) period = 'afternoon';
+      else if (hour >= 17 && hour < 22) period = 'evening';
+
+      if (day) {
+        day.count++;
+        day[period]++;
+      }
+
+      // Time Dist Overall
+      timeDist[period]++;
+
+      // Foods
+      entry.itemIds.forEach((id: string) => {
+        const name = libMap.get(id) || entry.itemSnapshots?.[id] || "Unknown";
+        foodCounts[name] = (foodCounts[name] || 0) + 1;
+      });
+    });
+
+    const topFoods = Object.entries(foodCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    return { last7Days, timeDist, topFoods };
+  }, [history, library]);
+
+  const colors = {
+    morning: '#fbbf24', // yellow-400
+    afternoon: '#34d399', // emerald-400
+    evening: '#60a5fa', // blue-400
+    night: '#818cf8' // indigo-400
+  };
+
+  if (history.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center text-gray-400 animate-fadeIn">
+        <i className="fa-solid fa-chart-line text-4xl mb-4 opacity-20"></i>
+        <p className="font-medium">Not enough data for stats.</p>
+        <p className="text-sm">Log some meals first!</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 pb-24 animate-fadeIn">
+      {/* Activity Stacked Area Chart */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+            <i className="fa-solid fa-chart-area text-emerald-500"></i> Meal Trends (7 Days)
+          </h3>
+          <div className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+            {history.length} Total Logs
+          </div>
+        </div>
+        
+        <StackedAreaChart data={stats.last7Days} colors={colors} />
+        
+        <div className="flex justify-between mt-4">
+          {stats.last7Days.map(d => (
+            <span key={d.date} className="text-[9px] font-bold text-gray-400 uppercase w-full text-center">{d.label}</span>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        {/* Time Distribution Summary */}
+        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col">
+          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">
+            <i className="fa-solid fa-clock text-blue-400 mr-2"></i> Distribution
+          </h3>
+          <div className="flex-1 space-y-4">
+            {[
+              { label: 'Morning', val: stats.timeDist.morning, color: 'bg-yellow-400' },
+              { label: 'Afternoon', val: stats.timeDist.afternoon, color: 'bg-emerald-400' },
+              { label: 'Evening', val: stats.timeDist.evening, color: 'bg-blue-400' },
+              { label: 'Night', val: stats.timeDist.night, color: 'bg-indigo-400' },
+            ].map(item => (
+              <div key={item.label} className="space-y-1">
+                <div className="flex justify-between text-[10px] font-bold text-gray-500 uppercase">
+                  <span>{item.label}</span>
+                  <span>{item.val}</span>
+                </div>
+                <div className="h-1.5 w-full bg-gray-50 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full ${item.color} rounded-full transition-all duration-1000`} 
+                    style={{ width: `${(item.val / Math.max(history.length, 1)) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Top Foods List */}
+        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">
+            <i className="fa-solid fa-fire-flame-curved text-red-400 mr-2"></i> Most Logged
+          </h3>
+          <div className="space-y-4">
+            {stats.topFoods.map(([name, count], i) => (
+              <div key={name} className="flex items-center gap-3">
+                <span className="text-[10px] font-black text-emerald-600 w-4">#{i+1}</span>
+                <div className="flex-1">
+                  <div className="flex justify-between text-xs font-bold text-gray-700 mb-1">
+                    <span className="line-clamp-1">{name}</span>
+                    <span className="text-gray-400">{count}x</span>
+                  </div>
+                  <div className="h-1 w-full bg-gray-50 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-emerald-500 rounded-full" 
+                      style={{ width: `${(count / Math.max(...stats.topFoods.map(f => f[1]), 1)) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /** --- App Wrapper --- */
 
 const App = () => {
@@ -483,7 +714,7 @@ const App = () => {
         <div>
           <h1 className="text-2xl font-black text-emerald-600 tracking-tight leading-none">FoodFlow</h1>
           <div className="flex gap-4 mt-1">
-             <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Smart Sync</p>
+             <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Analytics Ready</p>
              <div className="flex gap-2">
                 <button onClick={exportData} title="Export Data" className="text-[9px] font-black text-emerald-400 hover:text-emerald-600 transition-colors uppercase tracking-widest flex items-center gap-1"><i className="fa-solid fa-download"></i> Export</button>
                 <button onClick={importData} title="Import Data" className="text-[9px] font-black text-blue-400 hover:text-blue-600 transition-colors uppercase tracking-widest flex items-center gap-1"><i className="fa-solid fa-upload"></i> Import</button>
@@ -491,7 +722,7 @@ const App = () => {
           </div>
         </div>
         <div className="hidden md:flex gap-2">
-          {[ViewMode.LOG, ViewMode.HISTORY, ViewMode.LIBRARY].map(v => (
+          {[ViewMode.LOG, ViewMode.HISTORY, ViewMode.STATS, ViewMode.LIBRARY].map(v => (
             <button key={v} onClick={() => setView(v)} className={`text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-full transition-all ${view === v ? 'bg-emerald-500 text-white shadow-md' : 'text-gray-400 hover:bg-gray-100'}`}>{v}</button>
           ))}
         </div>
@@ -501,6 +732,7 @@ const App = () => {
         <div className="scroll-container p-6 max-w-2xl mx-auto w-full no-scrollbar">
           {view === ViewMode.LOG && <LogView library={library} onLog={logMeal} />}
           {view === ViewMode.HISTORY && <HistoryView history={history} library={library} onDelete={deleteMeal} onUpdate={updateMeal} />}
+          {view === ViewMode.STATS && <StatsView history={history} library={library} />}
           {view === ViewMode.LIBRARY && <LibraryView library={library} onAdd={addFood} onDelete={deleteFood} onUpdate={updateFood} />}
         </div>
       </main>
