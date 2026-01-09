@@ -15,8 +15,11 @@ const App: React.FC = () => {
   const [logTimestamp, setLogTimestamp] = useState<number>(Date.now());
 
   const loadData = () => {
-    setLibrary(FoodTrackerManager.getLibrary());
-    setHistory(FoodTrackerManager.getHistory());
+    // These methods now handle auto-migration for missing IDs internally
+    const libData = FoodTrackerManager.getLibrary();
+    const histData = FoodTrackerManager.getHistory();
+    setLibrary(libData);
+    setHistory(histData);
   };
 
   useEffect(() => {
@@ -47,9 +50,9 @@ const App: React.FC = () => {
   };
 
   const handleDeleteMeal = (id: string) => {
-    // We'll move the confirmation to a more reliable implementation or use simpler logic
+    if (!id) return;
     const updated = FoodTrackerManager.deleteMeal(id);
-    setHistory(updated);
+    setHistory([...updated]); // Create new array to force React update
   };
 
   const handleToggleFood = (id: string) => {
@@ -83,8 +86,8 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen w-full bg-white relative overflow-hidden transition-all duration-300">
-      <header className="bg-white border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+    <div className="flex flex-col h-full w-full bg-white relative overflow-hidden transition-all duration-300">
+      <header className="bg-white border-b px-6 py-4 flex justify-between items-center shrink-0 z-10">
         <h1 className="text-2xl font-bold text-emerald-600 flex items-center gap-2">
           <i className="fa-solid fa-leaf"></i>
           FoodFlow

@@ -2,13 +2,14 @@
 import { FoodItem, MealEntry } from '../types';
 
 /**
- * Helper for robust ID generation across all browser environments.
+ * Robust ID generation that works in all browser environments (secure and non-secure).
  */
 const generateId = (): string => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  return 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2, 11);
+  // Fallback for non-https/localhost environments
+  return 'ff-' + Date.now() + '-' + Math.random().toString(36).slice(2, 11);
 };
 
 export class FoodTrackerManager {
@@ -16,8 +17,26 @@ export class FoodTrackerManager {
   private static MEAL_HISTORY_KEY = 'food_flow_history';
 
   public static getLibrary(): FoodItem[] {
-    const data = localStorage.getItem(this.FOOD_LIBRARY_KEY);
-    return data ? JSON.parse(data) : [];
+    try {
+      const data = localStorage.getItem(this.FOOD_LIBRARY_KEY);
+      let library: FoodItem[] = data ? JSON.parse(data) : [];
+      
+      // Ensure IDs exist for library items
+      let migrated = false;
+      library = library.map(item => {
+        if (!item.id) {
+          migrated = true;
+          return { ...item, id: generateId() };
+        }
+        return item;
+      });
+
+      if (migrated) this.saveLibrary(library);
+      return library.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (e) {
+      console.error("Error reading library", e);
+      return [];
+    }
   }
 
   public static saveLibrary(items: FoodItem[]): void {
@@ -25,24 +44,29 @@ export class FoodTrackerManager {
   }
 
   public static getHistory(): MealEntry[] {
-    const data = localStorage.getItem(this.MEAL_HISTORY_KEY);
-    let history: MealEntry[] = data ? JSON.parse(data) : [];
-    
-    // Auto-migration: Ensure every entry has an ID (fixes issues with older data)
-    let needsMigration = false;
-    history = history.map(entry => {
-      if (!entry.id) {
-        needsMigration = true;
-        return { ...entry, id: generateId() };
+    try {
+      const data = localStorage.getItem(this.MEAL_HISTORY_KEY);
+      let history: MealEntry[] = data ? JSON.parse(data) : [];
+      
+      // CRITICAL: Auto-migration for legacy entries without IDs
+      let needsMigration = false;
+      history = history.map(entry => {
+        if (!entry.id) {
+          needsMigration = true;
+          return { ...entry, id: generateId() };
+        }
+        return entry;
+      });
+
+      if (needsMigration) {
+        this.saveHistory(history);
       }
-      return entry;
-    });
 
-    if (needsMigration) {
-      this.saveHistory(history);
+      return history.sort((a, b) => b.timestamp - a.timestamp);
+    } catch (e) {
+      console.error("Error reading history", e);
+      return [];
     }
-
-    return history.sort((a, b) => b.timestamp - a.timestamp);
   }
 
   public static saveHistory(entries: MealEntry[]): void {
@@ -89,7 +113,6 @@ export class FoodTrackerManager {
   public static updateFood(id: string, newName: string): { library: FoodItem[], history: MealEntry[] } {
     const library = this.getLibrary();
     const itemIndex = library.findIndex(item => item.id === id);
-    
     if (itemIndex === -1) return { library, history: this.getHistory() };
 
     const oldName = library[itemIndex].name;
@@ -129,9 +152,10 @@ export class FoodTrackerManager {
   }
 
   public static deleteMeal(id: string): MealEntry[] {
-    const history = this.getHistory().filter(entry => entry.id !== id);
-    this.saveHistory(history);
-    return history;
+    const currentHistory = this.getHistory();
+    const updated = currentHistory.filter(entry => entry.id !== id);
+    this.saveHistory(updated);
+    return updated;
   }
 
   public static logMeal(itemNames: string[], timestamp: number = Date.now()): MealEntry[] {
