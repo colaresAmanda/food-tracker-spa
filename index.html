@@ -8,49 +8,22 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>FoodFlow Tracker</title>
-    
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
     <style>
       @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-      @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-      @keyframes growUp { from { transform: scaleY(0); transform-origin: bottom; } to { transform: scaleY(1); transform-origin: bottom; } }
-      
-      .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
-      .animate-slideUp { animation: slideUp 0.3s ease-out; }
-      .animate-grow { animation: growUp 0.6s cubic-bezier(0.17, 0.67, 0.83, 0.67); }
-      
+      @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+      .animate-fadeIn { animation: fadeIn 0.4s ease-out; }
+      .animate-slideUp { animation: slideUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
       html, body, #root { 
-        height: 100%; 
-        margin: 0; 
-        padding: 0; 
-        overflow: hidden; 
-        position: fixed; 
-        width: 100%; 
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        height: 100%; margin: 0; padding: 0; overflow: hidden; width: 100%; position: fixed;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
-      .scroll-container {
-        height: 100%;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
-      }
+      .scroll-container { height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; }
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-      input[type="datetime-local"] {
-        appearance: none;
-        -webkit-appearance: none;
-        min-height: 3rem;
-      }
-
-      .chart-container {
-        position: relative;
-        width: 100%;
-        height: 200px;
-      }
+      input[type="datetime-local"] { appearance: none; -webkit-appearance: none; }
     </style>
-
     <script type="importmap">
 {
   "imports": {
@@ -63,7 +36,7 @@
 }
 </script>
 </head>
-<body class="bg-gray-50 text-gray-900">
+<body>
     <div id="root"></div>
     <script type="module" src="index.tsx"></script>
 </body>
