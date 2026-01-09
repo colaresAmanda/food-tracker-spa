@@ -4,11 +4,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- Modern mobile web app tags -->
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>FoodFlow Tracker</title>
+    
+    <!-- Scripts for No-Build SPA -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
       @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
       @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -22,7 +28,6 @@
       .animate-slideUp { animation: slideUp 0.4s ease-out; }
       .animate-bounceIn { animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
 
-      /* Desktop Scrollbar improvements */
       @media (min-width: 768px) {
         .scroll-smooth {
           scrollbar-width: thin;
@@ -33,22 +38,24 @@
         ::-webkit-scrollbar-thumb { background: #10b981; border-radius: 10px; }
       }
       
-      /* Fix for mobile height issues */
-      html, body, #root { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+      html, body, #root { height: 100%; margin: 0; padding: 0; overflow: hidden; position: fixed; width: 100%; }
     </style>
-<script type="importmap">
+
+    <script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
+    "react-dom/client": "https://esm.sh/react-dom@^19.2.3/client",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/"
   }
 }
 </script>
 </head>
-<body class="bg-gray-100 text-gray-900">
+<body class="bg-gray-100 text-gray-900 overflow-hidden">
     <div id="root"></div>
-    <!-- Entry point script -->
-    <script type="module" src="index.tsx"></script>
+    <!-- Load as index.js so GitHub Pages serves it correctly. Babel will process the TSX inside. -->
+    <script type="text/babel" data-type="module" data-presets="typescript,react" src="index.tsx"></script>
 </body>
 </html>
